@@ -4,11 +4,13 @@ type Point struct {
 	X int
 	Y int
 }
-type Rect struct {
-	X      int
-	Y      int
+type Size struct {
 	Width  int
 	Height int
+}
+type Rect struct {
+	Point
+	Size
 }
 
 type User struct {
@@ -16,6 +18,16 @@ type User struct {
 	FirstName    string
 	LastName     string
 	SupervisorId string
+}
+type Card struct {
+	Rect
+	Texts []Text
+}
+type Text struct {
+	Point
+	Font  string
+	Color string
+	Text  string
 }
 
 func (p *Point) Add(p2 Point) Point {

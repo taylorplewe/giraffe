@@ -12,13 +12,14 @@ import (
 )
 
 var (
-	width    float64
-	height   float64
-	document js.Value
-	canvasEl js.Value
-	ctx      js.Value
-	draw     js.Func
-	users    []*types.User
+	canvasWidth  float64
+	canvasHeight float64
+	document     js.Value
+	canvasEl     js.Value
+	ctx          js.Value
+	draw         js.Func
+	users        []*types.User
+	cards        []*types.Card
 )
 
 func main() {
@@ -27,6 +28,7 @@ func main() {
 	document = js.Global().Get("document")
 	canvasEl = document.Call("querySelector", "canvas")
 	ctx = canvasEl.Call("getContext", "2d")
+	ctx.Set("textBaseline", "top")
 
 	getFile()
 
@@ -34,12 +36,12 @@ func main() {
 		// Pull window size to handle resize
 		curBodyW := document.Get("body").Get("clientWidth").Float()
 		curBodyH := document.Get("body").Get("clientHeight").Float()
-		if curBodyW != width || curBodyH != height {
-			width, height = curBodyW, curBodyH
-			canvasEl.Set("width", width)
-			canvasEl.Set("height", height)
+		if curBodyW != canvasWidth || curBodyH != canvasHeight {
+			canvasWidth, canvasHeight = curBodyW, curBodyH
+			canvasEl.Set("width", canvasWidth)
+			canvasEl.Set("height", canvasHeight)
 		}
-		ctx.Call("clearRect", 0, 0, width, height)
+		ctx.Call("clearRect", 0, 0, canvasWidth, canvasHeight)
 
 		drawAllCards()
 
@@ -48,41 +50,83 @@ func main() {
 	})
 	defer draw.Release()
 
-	global.Center = types.Point{0, 0}
+	global.Center = types.Point{24, 24}
 	eventhandlers.RegisterAll(canvasEl)
 	js.Global().Call("requestAnimationFrame", draw)
 	<-forever
 }
 
-func drawCard(point types.Point, user *types.User) {
+func createCardFromPointAndUser(point types.Point, user *types.User) *types.Card {
 	padding := 16
 	title := fmt.Sprintf("%s %s", user.FirstName, user.LastName)
-	width := ctx.Call("measureText", title).Get("width").Int()
+	card := &types.Card{}
+	card.Texts = append(card.Texts, types.Text{
+		Point: types.Point{
+			X: point.X,
+			Y: point.Y + padding,
+		},
+		Font:  "24px Roboto",
+		Color: "white",
+		Text:  title,
+	})
+
+	ctx.Set("font", "24px Roboto")
+	textMetrics := ctx.Call("measureText", title)
+	width := textMetrics.Get("width").Int()
+	height := textMetrics.Get("fontBoundingBoxDescent").Int()
+
+	card.Rect = types.Rect{
+		Point: types.Point{
+			X: point.X - padding,
+			Y: point.Y - padding,
+		},
+		Size: types.Size{
+			Width:  width + (padding * 2),
+			Height: height + (padding * 2),
+		},
+	}
+
+	cards = append(cards, card)
+	return card
+}
+func drawCard(card *types.Card) {
+	padding := 16
+	x := global.Center.X + card.Rect.Point.X
+	y := global.Center.Y + card.Rect.Point.Y
+
+	// text
+	for _, text := range card.Texts {
+		ctx.Set("font", text.Font)
+		ctx.Set("fillStyle", text.Color)
+		ctx.Call("fillText", text.Text, text.Point.X+global.Center.X, text.Point.Y+global.Center.Y)
+	}
 
 	// border
 	ctx.Set("strokeStyle", "white")
 	ctx.Call("beginPath")
-	ctx.Call("roundRect", point.X-padding, point.Y-padding, width+(padding*2), 80+(padding*2), padding)
+	ctx.Call("roundRect", x, y, card.Rect.Size.Width, card.Rect.Size.Height, padding)
 	ctx.Call("stroke")
-
-	// title
-	ctx.Set("font", "24px Roboto")
-	ctx.Set("fillStyle", "white")
-	ctx.Set("textBaseline", "top")
-	ctx.Call("fillText", title, point.X, point.Y)
 }
 
-func drawAllCards() {
-	y := global.Center.Y + (16 + 4)
-	x := global.Center.X + (16 + 4)
+func createAllCards() {
+	y := global.Center.Y
+	x := global.Center.X
 	for _, user := range users {
-		drawCard(types.Point{
+		card := createCardFromPointAndUser(types.Point{
 			X: x,
 			Y: y,
 		}, user)
-		y += (80 + 32 + 8)
+		x += card.Rect.Size.Width + 8
+		if x > int(canvasWidth) {
+			x = global.Center.X
+			y += card.Rect.Size.Height + 8
+		}
 	}
-
+}
+func drawAllCards() {
+	for _, card := range cards {
+		drawCard(card)
+	}
 }
 
 func readCsvAsUserList(data string) []*types.User {
@@ -123,6 +167,7 @@ func getFile() {
 		reader.Set("onload", js.FuncOf(func(this js.Value, args []js.Value) any {
 			data := reader.Get("result")
 			users = readCsvAsUserList(data.String())
+			createAllCards()
 			return nil
 		}))
 		return nil
