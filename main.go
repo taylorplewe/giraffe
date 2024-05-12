@@ -1,10 +1,10 @@
 package main
 
 import (
-	"syscall/js"
 	"encoding/csv"
 	"fmt"
 	"strings"
+	"syscall/js"
 )
 
 type Rect struct {
@@ -20,9 +20,9 @@ type Card struct {
 }
 
 type User struct {
-	employeeId string
-	firstName string
-	lastName string
+	employeeId   string
+	firstName    string
+	lastName     string
 	supervisorId string
 }
 
@@ -44,16 +44,6 @@ func main() {
 	ctx = canvasEl.Call("getContext", "2d")
 
 	getFile()
-	
-	exCard = &Card{
-		Rect{
-			32,
-			32,
-			100,
-			80,
-		},
-		"example",
-	}
 
 	draw = js.FuncOf(func(this js.Value, args []js.Value) any {
 		// Pull window size to handle resize
@@ -66,7 +56,7 @@ func main() {
 		}
 		ctx.Call("clearRect", 0, 0, width, height)
 
-		drawCard(exCard)
+		drawAllCards()
 
 		js.Global().Call("requestAnimationFrame", draw)
 		return nil
@@ -82,7 +72,7 @@ func drawCard(card *Card) {
 	// border
 	ctx.Set("strokeStyle", "white")
 	ctx.Call("beginPath")
-	ctx.Call("roundRect", card.rect.x - padding, card.rect.y - padding, card.rect.width + (padding * 2), card.rect.height + (padding * 2), padding)
+	ctx.Call("roundRect", card.rect.x-padding, card.rect.y-padding, card.rect.width+(padding*2), card.rect.height+(padding*2), padding)
 	ctx.Call("stroke")
 
 	// title
@@ -93,8 +83,14 @@ func drawCard(card *Card) {
 }
 
 func drawAllCards() {
+	y := 16 + 4
 	for _, user := range users {
-		// drawCard(user)
+		fmt.Println(user.firstName)
+		drawCard(&Card{
+			Rect{16 + 4, y, 200, 80},
+			fmt.Sprintf("%s %s", user.firstName, user.lastName),
+		})
+		y += (80 + 32 + 8)
 	}
 
 }
@@ -118,9 +114,9 @@ func readCsvAsUserList(data string) []*User {
 			}
 		} else {
 			_users = append(_users, &User{
-				employeeId: line[columnMap["Employee Id"]],
-				firstName: line[columnMap["First Name"]],
-				lastName: line[columnMap["Last Name"]],
+				employeeId:   line[columnMap["Employee Id"]],
+				firstName:    line[columnMap["First Name"]],
+				lastName:     line[columnMap["Last Name"]],
 				supervisorId: line[columnMap["Supervisor Id"]],
 			})
 		}
