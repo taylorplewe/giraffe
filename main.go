@@ -54,34 +54,32 @@ func main() {
 	<-forever
 }
 
-func drawCard(card *types.Card) {
+func drawCard(point types.Point, user *types.User) {
 	padding := 16
+	title := fmt.Sprintf("%s %s", user.FirstName, user.LastName)
+	width := ctx.Call("measureText", title).Get("width").Int()
+
 	// border
 	ctx.Set("strokeStyle", "white")
 	ctx.Call("beginPath")
-	ctx.Call("roundRect", card.Rect.X-padding, card.Rect.Y-padding, card.Rect.Width+(padding*2), card.Rect.Height+(padding*2), padding)
+	ctx.Call("roundRect", point.X-padding, point.Y-padding, width+(padding*2), 80+(padding*2), padding)
 	ctx.Call("stroke")
 
 	// title
 	ctx.Set("font", "24px Roboto")
 	ctx.Set("fillStyle", "white")
 	ctx.Set("textBaseline", "top")
-	ctx.Call("fillText", card.Title, card.Rect.X, card.Rect.Y)
+	ctx.Call("fillText", title, point.X, point.Y)
 }
 
 func drawAllCards() {
 	y := global.Center.Y + (16 + 4)
 	x := global.Center.X + (16 + 4)
 	for _, user := range users {
-		drawCard(&types.Card{
-			Rect: types.Rect{
-				X:      x,
-				Y:      y,
-				Width:  200,
-				Height: 80,
-			},
-			Title: fmt.Sprintf("%s %s", user.FirstName, user.LastName),
-		})
+		drawCard(types.Point{
+			X: x,
+			Y: y,
+		}, user)
 		y += (80 + 32 + 8)
 	}
 

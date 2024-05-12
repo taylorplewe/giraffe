@@ -11,11 +11,6 @@ type Rect struct {
 	Height int
 }
 
-type Card struct {
-	Rect  Rect
-	Title string
-}
-
 type User struct {
 	EmployeeId   string
 	FirstName    string
