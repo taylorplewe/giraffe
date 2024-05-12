@@ -4,8 +4,14 @@ import (
 	"syscall/js"
 )
 
+var handlers = map[string]func(js.Value){
+	"mousedown": OnMouseDown,
+	"mousemove": OnMouseMove,
+	"mouseup":   OnMouseUp,
+}
+
 func RegisterAll(canvasEl js.Value) {
-	canvasEl.Call("addEventListener", "mousedown", js.FuncOf(OnMouseDown))
-	canvasEl.Call("addEventListener", "mousemove", js.FuncOf(OnMouseMove))
-	canvasEl.Call("addEventListener", "mouseup", js.FuncOf(OnMouseUp))
+	for event, handler := range handlers {
+		canvasEl.Call("addEventListener", event, EventHandler(handler))
+	}
 }

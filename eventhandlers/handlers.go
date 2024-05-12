@@ -13,20 +13,26 @@ var (
 	startCenter types.Point
 )
 
-func OnMouseDown(this js.Value, args []js.Value) any {
-	e := args[0]
+func EventHandler(callback func(js.Value)) js.Func {
+	return js.FuncOf(func(this js.Value, args []js.Value) any {
+		e := args[0]
+		e.Call("preventDefault")
+		callback(e)
+		return nil
+	})
+}
+
+func OnMouseDown(e js.Value) {
 	dragging = true
 	startPoint = types.Point{
 		X: e.Get("clientX").Int(),
 		Y: e.Get("clientY").Int(),
 	}
 	startCenter = global.Center
-	return nil
 }
-func OnMouseMove(this js.Value, args []js.Value) any {
-	e := args[0]
+func OnMouseMove(e js.Value) {
 	if !dragging {
-		return nil
+		return
 	}
 	newPoint := types.Point{
 		X: e.Get("clientX").Int(),
@@ -34,9 +40,7 @@ func OnMouseMove(this js.Value, args []js.Value) any {
 	}
 	diff := newPoint.Sub(startPoint)
 	global.Center = startCenter.Add(diff)
-	return nil
 }
-func OnMouseUp(this js.Value, args []js.Value) any {
+func OnMouseUp(e js.Value) {
 	dragging = false
-	return nil
 }

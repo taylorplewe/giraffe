@@ -74,7 +74,12 @@ func drawAllCards() {
 	x := global.Center.X + (16 + 4)
 	for _, user := range users {
 		drawCard(&types.Card{
-			Rect:  types.Rect{X: x, Y: y, Width: 200, Height: 80},
+			Rect: types.Rect{
+				X:      x,
+				Y:      y,
+				Width:  200,
+				Height: 80,
+			},
 			Title: fmt.Sprintf("%s %s", user.FirstName, user.LastName),
 		})
 		y += (80 + 32 + 8)
