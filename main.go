@@ -18,8 +18,9 @@ var (
 	canvasEl     js.Value
 	ctx          js.Value
 	draw         js.Func
-	users        []*types.User
-	cards        []*types.Card
+	usersById    map[string]*types.User
+	userLevels	 map[int][]*types.User
+	cardLevels	 map[int][]*types.Card
 )
 
 func main() {
@@ -59,26 +60,26 @@ func main() {
 func createCardFromPointAndUser(point types.Point, user *types.User) *types.Card {
 	padding := 16
 	title := fmt.Sprintf("%s %s", user.FirstName, user.LastName)
-	card := &types.Card{}
-	card.Texts = append(card.Texts, types.Text{
-		Point: types.Point{
-			X: point.X,
-			Y: point.Y + padding,
-		},
-		Font:  "24px Roboto",
-		Color: "white",
-		Text:  title,
-	})
-
-	ctx.Set("font", "24px Roboto")
+	ctx.Set("font", "24px sans-serif")
 	textMetrics := ctx.Call("measureText", title)
 	width := textMetrics.Get("width").Int()
 	height := textMetrics.Get("fontBoundingBoxDescent").Int()
 
+	card := &types.Card{}
+	card.Texts = append(card.Texts, types.Text{
+		Point: types.Point{
+			X: point.X + padding,
+			Y: point.Y + padding,
+		},
+		Font:  "24px sans-serif",
+		Color: "white",
+		Text:  title,
+	})
+
 	card.Rect = types.Rect{
 		Point: types.Point{
-			X: point.X - padding,
-			Y: point.Y - padding,
+			X: point.X,
+			Y: point.Y,
 		},
 		Size: types.Size{
 			Width:  width + (padding * 2),
@@ -86,7 +87,6 @@ func createCardFromPointAndUser(point types.Point, user *types.User) *types.Card
 		},
 	}
 
-	cards = append(cards, card)
 	return card
 }
 func drawCard(card *types.Card) {
@@ -109,28 +109,42 @@ func drawCard(card *types.Card) {
 }
 
 func createAllCards() {
+	ctx.Set("textBaseline", "top")	
 	y := global.Center.Y
 	x := global.Center.X
-	for _, user := range users {
-		card := createCardFromPointAndUser(types.Point{
-			X: x,
-			Y: y,
-		}, user)
-		x += card.Rect.Size.Width + 8
-		if x > int(canvasWidth) {
-			x = global.Center.X
-			y += card.Rect.Size.Height + 8
+	cardLevels = map[int][]*types.Card{}
+
+	level := 0
+	for {
+		if _, exists := userLevels[level]; !exists {
+			break
 		}
+		levelUsers := userLevels[level]
+		cardLevels[level] = []*types.Card{}
+		for _, user := range levelUsers {
+			card := createCardFromPointAndUser(types.Point{
+				X: x,
+				Y: y,
+			}, user)
+			cardLevels[level] = append(cardLevels[level], card)
+			x += card.Rect.Size.Width + 8
+		}
+		x = global.Center.X
+		y += cardLevels[level][0].Rect.Size.Height + 8
+		level++
 	}
 }
 func drawAllCards() {
-	for _, card := range cards {
-		drawCard(card)
+	for _, levelCards := range cardLevels {
+		for _, card := range levelCards {
+			drawCard(card)
+		}
 	}
 }
 
-func readCsvAsUserList(data string) []*types.User {
-	_users := []*types.User{}
+func readCsvAsUserMap(data string) map[string]*types.User {
+	_users := map[string]*types.User{}
+	employeesToSetSupervisor := []*types.User{}
 
 	csvReader := csv.NewReader(strings.NewReader(data))
 	records, err := csvReader.ReadAll()
@@ -146,16 +160,47 @@ func readCsvAsUserList(data string) []*types.User {
 				columnMap[column] = j
 			}
 		} else {
-			_users = append(_users, &types.User{
-				EmployeeId:   line[columnMap["Employee Id"]],
-				FirstName:    line[columnMap["First Name"]],
-				LastName:     line[columnMap["Last Name"]],
-				SupervisorId: line[columnMap["Supervisor Id"]],
-			})
+			newUser := &types.User{
+				EmployeeId:    line[columnMap["Employee Id"]],
+				FirstName:     line[columnMap["First Name"]],
+				LastName:      line[columnMap["Last Name"]],
+				SupervisorId:  line[columnMap["Supervisor Id"]],
+				Supervisor:    nil,
+				DirectReports: []*types.User{},
+			}
+			// check if supervisor exists
+			if supervisor, exists := _users[newUser.SupervisorId]; exists {
+				newUser.Supervisor = supervisor
+				supervisor.DirectReports = append(supervisor.DirectReports, newUser)
+			} else {
+				employeesToSetSupervisor = append(employeesToSetSupervisor, newUser)
+			}
+			_users[newUser.EmployeeId] = newUser
+		}
+	}
+
+	for _, user := range employeesToSetSupervisor {
+		if supervisor, exists := _users[user.SupervisorId]; exists {
+			user.Supervisor = supervisor
+			supervisor.DirectReports = append(supervisor.DirectReports, user)
 		}
 	}
 
 	return _users
+}
+
+func organizeHierarchy() {
+	userLevels = map[int][]*types.User{}
+	for _, user := range usersById {
+		userIsTopLevel := len(user.DirectReports) > 0 && user.Supervisor == nil
+		if userIsTopLevel {
+			userLevels[0] = append(userLevels[0], user)
+		}
+	}
+
+	for _, user := range userLevels[0] {
+		userLevels[1] = append(userLevels[1], user.DirectReports...)
+	}
 }
 
 func getFile() {
@@ -166,7 +211,8 @@ func getFile() {
 		reader.Call("readAsText", file)
 		reader.Set("onload", js.FuncOf(func(this js.Value, args []js.Value) any {
 			data := reader.Get("result")
-			users = readCsvAsUserList(data.String())
+			usersById = readCsvAsUserMap(data.String())
+			organizeHierarchy()
 			createAllCards()
 			return nil
 		}))

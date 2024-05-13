@@ -14,14 +14,17 @@ type Rect struct {
 }
 
 type User struct {
-	EmployeeId   string
-	FirstName    string
-	LastName     string
-	SupervisorId string
+	EmployeeId    string
+	FirstName     string
+	LastName      string
+	SupervisorId  string
+	Supervisor	  *User
+	DirectReports []*User
 }
 type Card struct {
 	Rect
-	Texts []Text
+	Texts              []Text
+	TotalChildrenWidth int
 }
 type Text struct {
 	Point
