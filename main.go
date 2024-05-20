@@ -15,8 +15,6 @@ var (
 	canvasWidth  float64
 	canvasHeight float64
 	document     js.Value
-	canvasEl     js.Value
-	ctx          js.Value
 	draw         js.Func
 	usersById    map[string]*types.User
 	userLevels   map[int][]*types.User
@@ -26,7 +24,7 @@ var (
 const (
 	CARD_WIDTH  = 200
 	CARD_HEIGHT = 100
-	GAP_X       = 8
+	GAP_X       = 16
 	GAP_Y       = 64
 	PADDING     = 16
 )
@@ -35,9 +33,9 @@ func main() {
 	forever := make(chan struct{})
 
 	document = js.Global().Get("document")
-	canvasEl = document.Call("querySelector", "canvas")
-	ctx = canvasEl.Call("getContext", "2d")
-	ctx.Set("textBaseline", "top")
+	global.CanvasEl = document.Call("querySelector", "canvas")
+	global.Ctx = global.CanvasEl.Call("getContext", "2d")
+	global.Ctx.Set("textBaseline", "top")
 
 	getFile()
 
@@ -47,10 +45,13 @@ func main() {
 		curBodyH := document.Get("body").Get("clientHeight").Float()
 		if curBodyW != canvasWidth || curBodyH != canvasHeight {
 			canvasWidth, canvasHeight = curBodyW, curBodyH
-			canvasEl.Set("width", canvasWidth)
-			canvasEl.Set("height", canvasHeight)
+			global.CanvasEl.Set("width", canvasWidth)
+			global.CanvasEl.Set("height", canvasHeight)
 		}
-		ctx.Call("clearRect", 0, 0, canvasWidth, canvasHeight)
+		global.Ctx.Call("save")
+		global.Ctx.Call("setTransform", 1, 0, 0, 1, 0, 0)
+		global.Ctx.Call("clearRect", 0, 0, global.CanvasEl.Get("width"), global.CanvasEl.Get("height"))
+		global.Ctx.Call("restore")
 
 		drawAllCards()
 
@@ -60,15 +61,15 @@ func main() {
 	defer draw.Release()
 
 	global.Center = types.Point{24, 24}
-	eventhandlers.RegisterAll(canvasEl)
+	eventhandlers.RegisterAll(global.CanvasEl)
 	js.Global().Call("requestAnimationFrame", draw)
 	<-forever
 }
 
 func createCardFromPointAndUser(point types.Point, user *types.User) *types.Card {
 	title := fmt.Sprintf("%s %s", user.FirstName, user.LastName)
-	ctx.Set("font", "24px sans-serif")
-	textMetrics := ctx.Call("measureText", title)
+	global.Ctx.Set("font", "24px sans-serif")
+	textMetrics := global.Ctx.Call("measureText", title)
 	width := textMetrics.Get("width").Int()
 	height := textMetrics.Get("fontBoundingBoxDescent").Int()
 
@@ -103,44 +104,44 @@ func drawCard(user *types.User) {
 
 	// text
 	for _, text := range card.Texts {
-		ctx.Set("font", text.Font)
-		ctx.Set("fillStyle", text.Color)
-		ctx.Call("fillText", text.Text, x+text.X, y+text.Y)
+		global.Ctx.Set("font", text.Font)
+		global.Ctx.Set("fillStyle", text.Color)
+		global.Ctx.Call("fillText", text.Text, x+text.X, y+text.Y)
 	}
 
 	// border
-	ctx.Set("strokeStyle", "white")
-	ctx.Call("beginPath")
-	ctx.Call("roundRect", x, y, card.Width, card.Height, PADDING)
-	ctx.Call("stroke")
+	global.Ctx.Set("strokeStyle", "white")
+	global.Ctx.Call("beginPath")
+	global.Ctx.Call("roundRect", x, y, card.Width, card.Height, PADDING)
+	global.Ctx.Call("stroke")
 
 	if len(user.DirectReports) > 0 {
 		// horizontal line between myself and children
-		ctx.Call("beginPath")
-		ctx.Call("moveTo", global.Center.X+user.DirectReports[0].Card.X+(CARD_WIDTH/2), y+card.Height+(GAP_Y/2))
-		ctx.Call("lineTo", global.Center.X+user.DirectReports[len(user.DirectReports)-1].Card.X+(CARD_WIDTH/2), y+card.Height+(GAP_Y/2))
-		ctx.Call("stroke")
+		global.Ctx.Call("beginPath")
+		global.Ctx.Call("moveTo", global.Center.X+user.DirectReports[0].Card.X+(CARD_WIDTH/2), y+card.Height+(GAP_Y/2))
+		global.Ctx.Call("lineTo", global.Center.X+user.DirectReports[len(user.DirectReports)-1].Card.X+(CARD_WIDTH/2), y+card.Height+(GAP_Y/2))
+		global.Ctx.Call("stroke")
 
 		// vertical line connecting me to that line
-		ctx.Call("beginPath")
-		ctx.Call("moveTo", x+(card.Width/2), y+card.Height)
-		ctx.Call("lineTo", x+(card.Width/2), y+card.Height+(GAP_Y/2))
-		ctx.Call("stroke")
+		global.Ctx.Call("beginPath")
+		global.Ctx.Call("moveTo", x+(card.Width/2), y+card.Height)
+		global.Ctx.Call("lineTo", x+(card.Width/2), y+card.Height+(GAP_Y/2))
+		global.Ctx.Call("stroke")
 	}
 
 	if user.Supervisor != nil {
 		// line to parent's horizontal line
-		ctx.Call("beginPath")
-		ctx.Call("moveTo", x+(card.Width/2), y)
-		ctx.Call("lineTo", x+(card.Width/2), y-(GAP_Y/2))
-		ctx.Call("stroke")
+		global.Ctx.Call("beginPath")
+		global.Ctx.Call("moveTo", x+(card.Width/2), y)
+		global.Ctx.Call("lineTo", x+(card.Width/2), global.Center.Y+user.Supervisor.Card.Y+user.Supervisor.Card.Height+(GAP_Y/2))
+		global.Ctx.Call("stroke")
 	}
 
 	// straight line from me to parent
-	// ctx.Call("beginPath")
-	// ctx.Call("moveTo", x+(card.Width/2), y)
-	// ctx.Call("lineTo", user.Supervisor.Card.X+global.Center.X+(CARD_WIDTH/2), user.Supervisor.Card.Y+global.Center.Y+user.Supervisor.Card.Height)
-	// ctx.Call("stroke")
+	// global.Ctx.Call("beginPath")
+	// global.Ctx.Call("moveTo", x+(card.Width/2), y)
+	// global.Ctx.Call("lineTo", user.Supervisor.Card.X+global.Center.X+(CARD_WIDTH/2), user.Supervisor.Card.Y+global.Center.Y+user.Supervisor.Card.Height)
+	// global.Ctx.Call("stroke")
 }
 
 func drawAllCards() {
@@ -221,7 +222,7 @@ func setUserLevels() {
 	}
 }
 func createAllCards() {
-	ctx.Set("textBaseline", "top")
+	global.Ctx.Set("textBaseline", "top")
 	y := global.Center.Y
 	x := global.Center.X
 	cardLevels = map[int][]*types.Card{}
@@ -275,16 +276,20 @@ func createCard(user *types.User, localX int, y int) {
 
 	// create children
 	for i, child := range user.DirectReports {
-		createCard(child, i*(CARD_WIDTH+GAP_X), y+CARD_HEIGHT+GAP_Y)
+		//dipY := (i & 1) * (CARD_HEIGHT + GAP_X)
+		createCard(child, i*(CARD_WIDTH+GAP_X) /*/2*/, y+CARD_HEIGHT+GAP_Y /*+dipY*/)
 	}
 
 	// center myself over children if I'm leftmost, otherwise center them under me
-	centeredX := (len(user.DirectReports) * (CARD_WIDTH + GAP_X)) / 2
-	if localX == 0 {
-		//user.Card.X = centeredX
-	} else {
-		user.Card.Mod = user.Card.X - centeredX
+	if len(user.DirectReports) == 0 {
+		return
 	}
+	centeredX := ((len(user.DirectReports) - 1) * (CARD_WIDTH + GAP_X)) / 2
+	// if localX == 0 {
+	// 	user.Card.X = centeredX
+	// } else {
+	user.Card.Mod = user.Card.X - centeredX
+	// }
 }
 
 func applyParentsMods(user *types.User, modSum int) {
@@ -311,10 +316,16 @@ func spaceTwoNodes(leftUser *types.User, rightUser *types.User, amountToMoveRigh
 }
 
 func spaceNodesChildren(user *types.User) {
+	totalShiftedAmount := 0
 	for i, child := range user.DirectReports {
-		if i > 0 {
-			amountToMoveRight := spaceTwoNodes(user.DirectReports[i-1], child, 0)
+		for _, leftChild := range user.DirectReports[:i] {
+			amountToMoveRight := spaceTwoNodes(leftChild, child, 0)
+			child.Card.X += amountToMoveRight
 			child.Card.Mod += amountToMoveRight
+			if amountToMoveRight > 0 {
+				fmt.Println(child.FirstName, child.LastName, "needs to move", amountToMoveRight)
+			}
+			totalShiftedAmount += amountToMoveRight
 		}
 		spaceNodesChildren(child)
 	}

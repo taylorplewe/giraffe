@@ -8,6 +8,7 @@ var handlers = map[string]func(js.Value){
 	"mousedown": OnMouseDown,
 	"mousemove": OnMouseMove,
 	"mouseup":   OnMouseUp,
+	"wheel":     OnWheel,
 }
 
 func RegisterAll(canvasEl js.Value) {
