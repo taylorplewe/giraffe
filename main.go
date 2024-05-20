@@ -19,8 +19,16 @@ var (
 	ctx          js.Value
 	draw         js.Func
 	usersById    map[string]*types.User
-	userLevels	 map[int][]*types.User
-	cardLevels	 map[int][]*types.Card
+	userLevels   map[int][]*types.User
+	cardLevels   map[int][]*types.Card
+)
+
+const (
+	CARD_WIDTH  = 200
+	CARD_HEIGHT = 100
+	GAP_X       = 8
+	GAP_Y       = 64
+	PADDING     = 16
 )
 
 func main() {
@@ -58,7 +66,6 @@ func main() {
 }
 
 func createCardFromPointAndUser(point types.Point, user *types.User) *types.Card {
-	padding := 16
 	title := fmt.Sprintf("%s %s", user.FirstName, user.LastName)
 	ctx.Set("font", "24px sans-serif")
 	textMetrics := ctx.Call("measureText", title)
@@ -68,8 +75,8 @@ func createCardFromPointAndUser(point types.Point, user *types.User) *types.Card
 	card := &types.Card{}
 	card.Texts = append(card.Texts, types.Text{
 		Point: types.Point{
-			X: point.X + padding,
-			Y: point.Y + padding,
+			X: point.X + PADDING,
+			Y: point.Y + PADDING,
 		},
 		Font:  "24px sans-serif",
 		Color: "white",
@@ -82,34 +89,139 @@ func createCardFromPointAndUser(point types.Point, user *types.User) *types.Card
 			Y: point.Y,
 		},
 		Size: types.Size{
-			Width:  width + (padding * 2),
-			Height: height + (padding * 2),
+			Width:  width + (PADDING * 2),
+			Height: height + (PADDING * 2),
 		},
 	}
 
 	return card
 }
-func drawCard(card *types.Card) {
-	padding := 16
-	x := global.Center.X + card.Rect.Point.X
-	y := global.Center.Y + card.Rect.Point.Y
+func drawCard(user *types.User) {
+	card := user.Card
+	x := global.Center.X + card.X
+	y := global.Center.Y + card.Y
 
 	// text
 	for _, text := range card.Texts {
 		ctx.Set("font", text.Font)
 		ctx.Set("fillStyle", text.Color)
-		ctx.Call("fillText", text.Text, text.Point.X+global.Center.X, text.Point.Y+global.Center.Y)
+		ctx.Call("fillText", text.Text, x+text.X, y+text.Y)
 	}
 
 	// border
 	ctx.Set("strokeStyle", "white")
 	ctx.Call("beginPath")
-	ctx.Call("roundRect", x, y, card.Rect.Size.Width, card.Rect.Size.Height, padding)
+	ctx.Call("roundRect", x, y, card.Width, card.Height, PADDING)
 	ctx.Call("stroke")
+
+	if len(user.DirectReports) > 0 {
+		// horizontal line between myself and children
+		ctx.Call("beginPath")
+		ctx.Call("moveTo", global.Center.X+user.DirectReports[0].Card.X+(CARD_WIDTH/2), y+card.Height+(GAP_Y/2))
+		ctx.Call("lineTo", global.Center.X+user.DirectReports[len(user.DirectReports)-1].Card.X+(CARD_WIDTH/2), y+card.Height+(GAP_Y/2))
+		ctx.Call("stroke")
+
+		// vertical line connecting me to that line
+		ctx.Call("beginPath")
+		ctx.Call("moveTo", x+(card.Width/2), y+card.Height)
+		ctx.Call("lineTo", x+(card.Width/2), y+card.Height+(GAP_Y/2))
+		ctx.Call("stroke")
+	}
+
+	if user.Supervisor != nil {
+		// line to parent's horizontal line
+		ctx.Call("beginPath")
+		ctx.Call("moveTo", x+(card.Width/2), y)
+		ctx.Call("lineTo", x+(card.Width/2), y-(GAP_Y/2))
+		ctx.Call("stroke")
+	}
+
+	// straight line from me to parent
+	// ctx.Call("beginPath")
+	// ctx.Call("moveTo", x+(card.Width/2), y)
+	// ctx.Call("lineTo", user.Supervisor.Card.X+global.Center.X+(CARD_WIDTH/2), user.Supervisor.Card.Y+global.Center.Y+user.Supervisor.Card.Height)
+	// ctx.Call("stroke")
 }
 
+func drawAllCards() {
+	for _, levelUsers := range userLevels {
+		for _, user := range levelUsers {
+			drawCard(user)
+		}
+	}
+}
+
+func setUsersById(data string) {
+	usersById = map[string]*types.User{}
+	employeesToSetSupervisor := []*types.User{}
+
+	csvReader := csv.NewReader(strings.NewReader(data))
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		fmt.Errorf("Error reading csv: %v", err)
+		return
+	}
+
+	columnMap := map[string]int{}
+	for i, line := range records {
+		if i == 0 {
+			for j, column := range line {
+				columnMap[column] = j
+			}
+		} else {
+			newUser := &types.User{
+				EmployeeId:    line[columnMap["Employee Id"]],
+				FirstName:     line[columnMap["First Name"]],
+				LastName:      line[columnMap["Last Name"]],
+				SupervisorId:  line[columnMap["Supervisor Id"]],
+				Supervisor:    nil,
+				DirectReports: []*types.User{},
+			}
+			// check if supervisor exists
+			if supervisor, exists := usersById[newUser.SupervisorId]; exists {
+				newUser.Supervisor = supervisor
+				supervisor.DirectReports = append(supervisor.DirectReports, newUser)
+			} else {
+				employeesToSetSupervisor = append(employeesToSetSupervisor, newUser)
+			}
+			usersById[newUser.EmployeeId] = newUser
+		}
+	}
+
+	for _, user := range employeesToSetSupervisor {
+		if supervisor, exists := usersById[user.SupervisorId]; exists {
+			user.Supervisor = supervisor
+			supervisor.DirectReports = append(supervisor.DirectReports, user)
+		}
+	}
+}
+
+func setUserLevel(user *types.User, level int) {
+	if _, exists := userLevels[level]; !exists {
+		userLevels[level] = []*types.User{}
+	}
+	userLevels[level] = append(userLevels[level], user)
+
+	for _, child := range user.DirectReports {
+		setUserLevel(child, level+1)
+	}
+}
+
+func setUserLevels() {
+	userLevels = map[int][]*types.User{}
+	for _, user := range usersById {
+		userIsTopLevel := len(user.DirectReports) > 0 && user.Supervisor == nil
+		if userIsTopLevel {
+			userLevels[0] = append(userLevels[0], user)
+		}
+	}
+
+	for _, child := range userLevels[0][0].DirectReports {
+		setUserLevel(child, 1)
+	}
+}
 func createAllCards() {
-	ctx.Set("textBaseline", "top")	
+	ctx.Set("textBaseline", "top")
 	y := global.Center.Y
 	x := global.Center.X
 	cardLevels = map[int][]*types.Card{}
@@ -134,72 +246,77 @@ func createAllCards() {
 		level++
 	}
 }
-func drawAllCards() {
-	for _, levelCards := range cardLevels {
-		for _, card := range levelCards {
-			drawCard(card)
-		}
+
+func createCard(user *types.User, localX int, y int) {
+	user.Card = &types.Card{
+		Rect: types.Rect{
+			Point: types.Point{
+				X: localX,
+				Y: y,
+			},
+			Size: types.Size{
+				Width:  CARD_WIDTH,
+				Height: CARD_HEIGHT,
+			},
+		},
+		Mod: 0,
+		Texts: []types.Text{
+			types.Text{
+				Point: types.Point{
+					X: PADDING,
+					Y: PADDING,
+				},
+				Font:  "24px sans-serif",
+				Color: "white",
+				Text:  fmt.Sprintf("%s %s", user.FirstName, user.LastName),
+			},
+		},
+	}
+
+	// create children
+	for i, child := range user.DirectReports {
+		createCard(child, i*(CARD_WIDTH+GAP_X), y+CARD_HEIGHT+GAP_Y)
+	}
+
+	// center myself over children if I'm leftmost, otherwise center them under me
+	centeredX := (len(user.DirectReports) * (CARD_WIDTH + GAP_X)) / 2
+	if localX == 0 {
+		//user.Card.X = centeredX
+	} else {
+		user.Card.Mod = user.Card.X - centeredX
 	}
 }
 
-func readCsvAsUserMap(data string) map[string]*types.User {
-	_users := map[string]*types.User{}
-	employeesToSetSupervisor := []*types.User{}
+func applyParentsMods(user *types.User, modSum int) {
+	user.Card.X += modSum
+	modSum += user.Card.Mod
 
-	csvReader := csv.NewReader(strings.NewReader(data))
-	records, err := csvReader.ReadAll()
-	if err != nil {
-		fmt.Errorf("Error reading csv: %v", err)
-		return _users
+	for _, child := range user.DirectReports {
+		applyParentsMods(child, modSum)
 	}
 
-	columnMap := map[string]int{}
-	for i, line := range records {
-		if i == 0 {
-			for j, column := range line {
-				columnMap[column] = j
-			}
-		} else {
-			newUser := &types.User{
-				EmployeeId:    line[columnMap["Employee Id"]],
-				FirstName:     line[columnMap["First Name"]],
-				LastName:      line[columnMap["Last Name"]],
-				SupervisorId:  line[columnMap["Supervisor Id"]],
-				Supervisor:    nil,
-				DirectReports: []*types.User{},
-			}
-			// check if supervisor exists
-			if supervisor, exists := _users[newUser.SupervisorId]; exists {
-				newUser.Supervisor = supervisor
-				supervisor.DirectReports = append(supervisor.DirectReports, newUser)
-			} else {
-				employeesToSetSupervisor = append(employeesToSetSupervisor, newUser)
-			}
-			_users[newUser.EmployeeId] = newUser
-		}
-	}
-
-	for _, user := range employeesToSetSupervisor {
-		if supervisor, exists := _users[user.SupervisorId]; exists {
-			user.Supervisor = supervisor
-			supervisor.DirectReports = append(supervisor.DirectReports, user)
-		}
-	}
-
-	return _users
+	user.Card.Mod = 0
 }
 
-func organizeHierarchy() {
-	userLevels = map[int][]*types.User{}
-	for _, user := range usersById {
-		userIsTopLevel := len(user.DirectReports) > 0 && user.Supervisor == nil
-		if userIsTopLevel {
-			userLevels[0] = append(userLevels[0], user)
-		}
+func spaceTwoNodes(leftUser *types.User, rightUser *types.User, amountToMoveRight int) int {
+	if rightUser.Card.X < leftUser.Card.X+CARD_WIDTH+GAP_X {
+		amountToMoveRight += (leftUser.Card.X + CARD_WIDTH + GAP_X) - rightUser.Card.X
 	}
 
-	for _, user := range userLevels[0] {
-		userLevels[1] = append(userLevels[1], user.DirectReports...)
+	if len(rightUser.DirectReports) > 0 && len(leftUser.DirectReports) > 0 {
+		amountToMoveRight += spaceTwoNodes(leftUser.DirectReports[len(leftUser.DirectReports)-1], rightUser.DirectReports[0], amountToMoveRight)
+	}
+
+	return amountToMoveRight
+}
+
+func spaceNodesChildren(user *types.User) {
+	for i, child := range user.DirectReports {
+		if i > 0 {
+			amountToMoveRight := spaceTwoNodes(user.DirectReports[i-1], child, 0)
+			child.Card.Mod += amountToMoveRight
+		}
+		spaceNodesChildren(child)
 	}
 }
 
@@ -211,9 +328,12 @@ func getFile() {
 		reader.Call("readAsText", file)
 		reader.Set("onload", js.FuncOf(func(this js.Value, args []js.Value) any {
 			data := reader.Get("result")
-			usersById = readCsvAsUserMap(data.String())
-			organizeHierarchy()
-			createAllCards()
+			setUsersById(data.String())
+			setUserLevels()
+			createCard(userLevels[0][0], 0, 0)
+			applyParentsMods(userLevels[0][0], 0)
+			spaceNodesChildren(userLevels[0][0])
+			applyParentsMods(userLevels[0][0], 0)
 			return nil
 		}))
 		return nil

@@ -18,13 +18,14 @@ type User struct {
 	FirstName     string
 	LastName      string
 	SupervisorId  string
-	Supervisor	  *User
+	Supervisor    *User
 	DirectReports []*User
+	Card          *Card
 }
 type Card struct {
 	Rect
-	Texts              []Text
-	TotalChildrenWidth int
+	Mod   int
+	Texts []Text
 }
 type Text struct {
 	Point
